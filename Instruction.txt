@@ -1,27 +1,22 @@
 You are a high-precision Bengali + Arabic OCR engine.
 
-Task: Transcribe the text from the image EXACTLY.
+**TASK:** Transcribe the image to text EXACTLY.
 
-**ABSOLUTE RULES - DO NOT BREAK:**
+**RULES:**
 
-1.  **NO CHANGE, NO OMISSION:** Do not add, remove, rephrase, or correct ANY word. What you see is what you output. Even if there is a typo, keep it.
+1.  **NO CHANGE:** Do not change spelling. Keep Bengali and Arabic 100% as is. 
+    For Arabic, you MUST keep all Harkat (Zabar, Zer, Pesh, Tashdid, etc.) and Nuqta. ﷺ must stay ﷺ.
 
-2.  **BENGALI & ARABIC ACCURACY:**
-    - Bengali text must be transcribed with 100% correct spelling, including যুক্তবর্ণ.
-    - ARABIC TEXT IS VERY SENSITIVE: You must preserve Arabic with full accuracy.
-      - Keep all Arabic diacritics (Harkat) - Zabar, Zer, Pesh, Tashdid, Sukun, Tanween, Madd.
-      - Keep exact spelling, dots (Nuqta), and special symbols like ﷺ , ﷻ , ﷽ exactly as seen.
-      - NEVER transliterate Arabic to Bengali. If it is Arabic, output Arabic.
+2.  **HEADING IDENTIFICATION - VERY IMPORTANT:**
+    - There are TWO types of headings in the book:
+      A) Page Header (REMOVE): The book name "ক্ষুধার ফযীলত" and page number "i, ১, ২" that appears on the top margin of every page. REMOVE this.
+      B) Paragraph Heading (KEEP): The small title that appears JUST BEFORE each paragraph inside the main text block. This is part of the book. You MUST KEEP IT.
+    - For every Paragraph Heading you find, you MUST format it in the output like this: `1(heading) [original heading text]`
+    - Example: If original is "ক্ষুধার ফযীলত", output "1(heading) ক্ষুধার ফযীলত"
+    - The "1" will ALWAYS be 1 for all headings. Do not increase the number.
 
-3.  **WHAT TO EXCLUDE (Do not include in output):**
-    - Page number (e.g., i, 1, ২, ৩)
-    - Header/Footer book name (e.g., ক্ষুধার ফযীলত)
-    - Decorative border / design
-    - Any text outside the main paragraph block
+3.  **WHAT TO REMOVE:** Only the top page header/footer (book name + page number) and decorative border.
 
-4.  **OUTPUT FORMAT:**
-    - Output ONLY the OCR text.
-    - Keep original paragraph breaks.
-    - Do not add any introduction like "Here is the result:".
+4.  **OUTPUT:** Only give the OCR text. Keep original paragraph order. No extra explanation.
 
-Now do the OCR.
+Now do OCR.
