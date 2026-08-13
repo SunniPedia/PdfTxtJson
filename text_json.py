@@ -1,35 +1,29 @@
 import json
 import re
 import os
+import glob
 
-input_path = '/storage/emulated/0/Download/text/convert.txt'
-output_path = '/storage/emulated/0/Download/text/converted_data.json'
+# ফোল্ডার পাথ
+input_dir = 'txt'
+output_dir = 'json'
 
-def convert_txt_to_json():
+def convert_txt_to_json(file_path):
     try:
-        if not os.path.exists(input_path):
-            print(f"ভুল: ফাইল পাওয়া যায়নি!")
-            return
-
-        with open(input_path, 'r', encoding='utf-8') as file:
+        with open(file_path, 'r', encoding='utf-8') as file:
             content = file.read()
 
-        # নতুন লজিক: '1' এর পর থেকে পরবর্তী '1' এর আগ পর্যন্ত যা থাকবে 
-        # তাকে আলাদা করা। এটি লাইনের শুরু বা মাঝখানের '1' কেউ গুরুত্ব দেবে।
+        # '1' এর পর থেকে পরবর্তী '1' এর আগ পর্যন্ত আলাদা করা
         sections = re.split(r'\n(?=1)', content)
         
-        # যদি প্রথম লাইনে '1' থাকে তবে split এর ফলে প্রথম এলিমেন্ট খালি হতে পারে
         if sections and not sections[0].startswith('1'):
             sections.pop(0)
 
         json_output = []
         for section in sections:
             if section.startswith('1'):
-                # '1' বাদ দিয়ে প্রথম লাইনটি হেডিং হিসেবে নেওয়া
                 lines = section[1:].split('\n', 1)
                 heading = lines[0].strip()
                 
-                # বাকি অংশটুকু কন্টেন্ট
                 body = lines[1].strip() if len(lines) > 1 else ""
                 
                 entry = {
@@ -38,13 +32,35 @@ def convert_txt_to_json():
                 }
                 json_output.append(entry)
 
+        # আউটপুট ফাইল পাথ তৈরি (txt এর নাম অনুযায়ী json তৈরি হবে)
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        output_path = os.path.join(output_dir, f"{base_name}.json")
+
         with open(output_path, 'w', encoding='utf-8') as json_file:
             json.dump(json_output, json_file, ensure_ascii=False, indent=4)
         
-        print(f"সফল হয়েছে! {len(json_output)}টি এন্ট্রি তৈরি হয়েছে।")
+        print(f"সফল হয়েছে! '{base_name}.txt' থেকে {len(json_output)}টি এন্ট্রি তৈরি হয়েছে -> '{output_path}'")
 
     except Exception as e:
-        print(f"ত্রুটি: {e}")
+        print(f"ত্রুটি ({file_path}): {e}")
+
+def process_all_files():
+    # txt ফোল্ডার আছে কি না যাচাই
+    if not os.path.exists(input_dir):
+        print(f"ত্রুটি: '{input_dir}' ফোল্ডার পাওয়া যায়নি!")
+        return
+
+    # json ফোল্ডার না থাকলে তৈরি করে নিবে
+    os.makedirs(output_dir, exist_ok=True)
+
+    # txt ফোল্ডারের সব .txt ফাইল বের করা
+    txt_files = glob.glob(os.path.join(input_dir, '*.txt'))
+    if not txt_files:
+        print(f"'{input_dir}' ফোল্ডারে কোনো .txt ফাইল পাওয়া যায়নি।")
+        return
+
+    for txt_file in txt_files:
+        convert_txt_to_json(txt_file)
 
 if __name__ == "__main__":
-    convert_txt_to_json()
+    process_all_files()
