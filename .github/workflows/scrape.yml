@@ -1,12 +1,10 @@
 name: Scrape Pamphlets
 
 on:
-  schedule:
-    - cron: '0 0 * * *' # প্রতিদিন স্বয়ংক্রিয়ভাবে চলার জন্য
-  workflow_dispatch: # গিটহাব থেকে ম্যানুয়ালি রান করার জন্য
+  workflow_dispatch:
 
 permissions:
-  contents: write # গিটহাবে ফাইল push করার অনুমতি নিশ্চিত করতে
+  contents: write
 
 jobs:
   scrape:
@@ -29,10 +27,26 @@ jobs:
       - name: Run Scraper Script
         run: python scraper.py
 
+      - name: Show Log in Actions
+        if: always()
+        run: |
+          echo "========== SCRAPING LOG =========="
+          cat scraping.log || echo "No log file found"
+          echo "=================================="
+
+      - name: Upload Log as Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraping-logs
+          path: |
+            scraping.log
+            pamphletTXT/
+
       - name: Commit and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add pamphletTXT/ || true
-          git diff --quiet && git diff --staged --quiet || git commit -m "Update pamphlets [$(date)]"
+          git add pamphletTXT/
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update pamphlets - log attached"
           git push
