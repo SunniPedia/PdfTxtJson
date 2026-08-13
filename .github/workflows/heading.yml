@@ -37,14 +37,17 @@ jobs:
           import os, shutil
           from pathlib import Path
 
-          backup_root = Path("pamphletTxt_backup")
+          backup_root = Path("pamphletTXT_backup")
           if not backup_root.exists():
               print("No backup folder found!")
               exit(1)
 
-          target_backup_name = "${{ github.event.inputs.backup_to_restore }}"
+          target_backup_name = "${{ github.event.inputs.backup_to_restore }}".strip()
           if target_backup_name:
               backup_dir = backup_root / target_backup_name
+              if not backup_dir.exists():
+                  print(f"Backup {target_backup_name} not found!")
+                  exit(1)
           else:
               # latest backup
               dirs = sorted([d for d in backup_root.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
@@ -54,11 +57,11 @@ jobs:
               backup_dir = dirs[0]
 
           print(f"Restoring from: {backup_dir}")
+          Path("pamphletTXT").mkdir(exist_ok=True)
           for f in backup_dir.glob("*.txt"):
               dest = Path("pamphletTXT") / f.name
               shutil.copy2(f, dest)
               print(f"Restored {f.name}")
-
           PY
 
       - name: Backup + Process Mode
@@ -70,26 +73,32 @@ jobs:
           from datetime import datetime
 
           folder = Path("pamphletTXT")
-          backup_root = Path("pamphletTxt_backup")
+          backup_root = Path("pamphletTXT_backup")
           backup_root.mkdir(exist_ok=True)
+          folder.mkdir(exist_ok=True)
 
           # 1. BACKUP CREATE
           timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
           backup_dir = backup_root / f"backup_{timestamp}"
           backup_dir.mkdir()
 
-          for file_path in folder.glob("*.txt"):
+          txt_files = list(folder.glob("*.txt"))
+          if not txt_files:
+              print("No txt files found in pamphletTXT")
+              exit(0)
+
+          for file_path in txt_files:
+              if file_path.name.endswith(".bak"):
+                  continue
               shutil.copy2(file_path, backup_dir / file_path.name)
-              #.bak file ও রাখা হলো same folder এ
+              #.bak file same folder এ
               shutil.copy2(file_path, folder / (file_path.name + ".bak"))
 
-          print(f"Backup created at: {backup_dir}")
+          print(f"Backup created at: {backup_dir} | Files: {len(txt_files)}")
 
           # 2. PROCESSING - 1 add logic
           for file_path in folder.glob("*.txt"):
-              if file_path.suffix == ".bak":
-                  continue
-              if ".bak" in file_path.name:
+              if file_path.name.endswith(".bak"):
                   continue
 
               filename_without_ext = file_path.stem
@@ -103,15 +112,20 @@ jobs:
 
               # যদি প্রথম লাইনে filename না থাকে
               if not lines or not lines[0].strip().startswith(f"1{filename_without_ext}"):
-                  new_lines.append(first_heading)
-                  new_lines.append("")
-              else:
-                  # skip old first heading, will add fresh
-                  # first line টা বাদ দিয়ে বাকি process করবো
-                  if lines[0].strip() == first_heading or lines[0].strip() == filename_without_ext:
+                  # যদি আগের heading টা শুধু filename হয়ে থাকে সেটা বাদ দাও
+                  if lines and lines[0].strip() == filename_without_ext:
                       lines = lines[1:]
                   new_lines.append(first_heading)
                   new_lines.append("")
+              else:
+                  new_lines.append(first_heading)
+                  new_lines.append("")
+                  # duplicate first heading skip
+                  if lines and (lines[0].strip() == first_heading or lines[0].strip() == filename_without_ext):
+                      lines = lines[1:]
+                      # তার পরের খালি লাইনও skip
+                      if lines and lines[0].strip() == "":
+                          lines = lines[1:]
 
               i = 0
               while i < len(lines):
@@ -154,13 +168,13 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add pamphletTxt/ pamphletTxt_backup/
-          git diff --staged --quiet || git commit -m "Backup + Add 1 before headings [${{ github.event.inputs.mode || 'auto' }}]"
+          git add pamphletTXT/ pamphletTXT_backup/
+          git diff --staged --quiet || git commit -m "Backup + Add 1 before headings [${{ github.event.inputs.mode || 'auto' }}] - pamphletTXT"
           git push
 
       - name: Upload backup as artifact
         uses: actions/upload-artifact@v4
         with:
           name: backup-${{ github.run_number }}
-          path: pamphletTxt_backup/
+          path: pamphletTXT_backup/
           retention-days: 30
