@@ -3,7 +3,7 @@ name: Pamphlet Heading Processor with Backup
 on:
   push:
     paths:
-      - 'pamphletTxt/**.txt'
+      - 'pamphletTXT/**.txt'
   workflow_dispatch:
     inputs:
       mode:
@@ -55,7 +55,7 @@ jobs:
 
           print(f"Restoring from: {backup_dir}")
           for f in backup_dir.glob("*.txt"):
-              dest = Path("pamphletTxt") / f.name
+              dest = Path("pamphletTXT") / f.name
               shutil.copy2(f, dest)
               print(f"Restored {f.name}")
 
@@ -69,7 +69,7 @@ jobs:
           from pathlib import Path
           from datetime import datetime
 
-          folder = Path("pamphletTxt")
+          folder = Path("pamphletTXT")
           backup_root = Path("pamphletTxt_backup")
           backup_root.mkdir(exist_ok=True)
 
