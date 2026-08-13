@@ -37,29 +37,29 @@ for filename in os.listdir(TXT_FOLDER):
 
     full_old = os.path.join(TXT_FOLDER, filename)
 
-    # তোমার ফরম্যাট: important_8092.txt
-    # এটা থেকে 8092 বের করা
+    # তোমার ফরম্যাট: important_8092.txt থেকে 8092 বের করা
     m = re.search(r'important_(\d+)\.txt$', filename, re.IGNORECASE)
 
-    # যদি important_ না থাকে, fallback হিসেবে যেকোনো _number.txt
+    # fallback হিসেবে যেকোনো _number.txt
     if not m:
         m = re.search(r'_(\d+)\.txt$', filename)
     if not m:
         m = re.search(r'(\d+)\.txt$', filename)
 
     if not m:
-        print(f"⏭️ Skip {filename} - number not found")
+        print(f"⏭ Skip {filename} - number not found")
         continue
 
     pid = m.group(1)
 
     if pid not in mapping:
-        print(f"⏭️ No Bangla name for {pid}, skipping {filename}")
+        print(f"⏭ No Bangla name for {pid}, skipping {filename}")
         continue
 
     bangla_name = clean_name(mapping[pid])
-    new_filename = f"{bangla_name}_{pid}.txt" # অকাট্য বিশ্বাসের বরকত_8092.txt
-    # যদি চাও important_ টা রাখতে তাহলে: new_filename = f"important_{bangla_name}_{pid}.txt"
+
+    # ✅ এখানেই তোমার চাওয়া আপডেট: শুধু বাংলা নাম.txt
+    new_filename = f"{bangla_name}.txt"
 
     full_new = os.path.join(TXT_FOLDER, new_filename)
 
