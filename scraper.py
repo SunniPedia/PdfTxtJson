@@ -4,21 +4,26 @@ import requests
 from bs4 import BeautifulSoup
 import html
 import re
+from datetime import datetime
 
-# তোমার দেওয়া নির্দিষ্ট আইডি গুলো
-PAMPHLET_IDS = [
-    8092, 8106, 8121, 8133, 8155, 8170, 8185, 8222, 8226, 8240, 8258, 8269, 8285, 8299, 8312, 8328, 8364, 8384, 8398, 8432, 8446, 8466, 8481, 8503, 8514, 8536, 8551, 8565, 8581, 8595, 8614, 8627, 8633, 8666, 8681, 8693, 8715, 8728, 8754, 8769, 8784, 8791, 8838, 8860, 8903, 8913, 8931, 8943, 8962, 8969, 8993, 9010, 9026, 9038, 9055, 9094, 9103, 9118, 9131, 9175, 9191, 9213, 9228, 9239, 9258, 9271, 9298
-]
-
-BASE_URL = "https://www.dawateislami.net/pamphlets/{}/page/{}"
+INPUT_FILE = "pamphlet.txt"
 OUTPUT_FOLDER = "pamphletTXT"
+LOG_FILE = "scraping.log"
+BASE_URL = "https://www.dawateislami.net/pamphlets/{}/page/{}"
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 }
 
+# লগ ফাংশন - স্ক্রিনেও দেখাবে, ফাইলেও লিখবে
+def log(msg):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] {msg}"
+    print(line)
+    with open(LOG_FILE, 'a', encoding='utf-8') as f:
+        f.write(line + "\n")
+
 def clean_folder_name(name):
-    # ফোল্ডারের নামে ব্যবহার করা যাবে না এমন ক্যারেক্টারগুলো সরানো
     cleaned = re.sub(r'[\\/*?:"<>|]', '', name)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return cleaned
@@ -32,80 +37,100 @@ def final_clean(text):
     text = re.sub(r' +', ' ', text)
     return text.strip()
 
-# আউটপুট ফোল্ডার তৈরি
+def load_ids_from_file(filepath):
+    if not os.path.exists(filepath):
+        log(f"❌ ERROR: {filepath} ফাইল পাওয়া যায়নি!")
+        return []
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read()
+    ids = re.split(r'[,\n|\s]+', content)
+    clean_ids = [int(i.strip()) for i in ids if i.strip().isdigit()]
+    clean_ids = list(dict.fromkeys(clean_ids))
+    return clean_ids
+
+# পুরনো লগ ডিলিট করে নতুন শুরু
+if os.path.exists(LOG_FILE):
+    os.remove(LOG_FILE)
+
+log(f"=== Scraping Started ===")
+log(f"Input file: {INPUT_FILE}")
+
+PAMPHLET_IDS = load_ids_from_file(INPUT_FILE)
+log(f"Found {len(PAMPHLET_IDS)} IDs: {PAMPHLET_IDS}")
+
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+if not PAMPHLET_IDS:
+    log("❌ কোনো আইডি পাওয়া যায়নি, শেষ করা হলো।")
+    exit(0)
+
+success_count = 0
+fail_count = 0
+
 for pamphlet_id in PAMPHLET_IDS:
-    print(f"\n--- Processing ID: {pamphlet_id} ---")
+    log(f"\n--------------------------------------------------")
+    log(f"▶️ Processing ID: {pamphlet_id}")
     full_book_text = ""
     book_title = f"pamphlet_{pamphlet_id}"
     page_num = 1
+    total_chars = 0
 
     while True:
         url = BASE_URL.format(pamphlet_id, page_num)
+        log(f" -> Fetching Page {page_num}: {url}")
         try:
-            res = requests.get(url, headers=headers, timeout=20)
+            res = requests.get(url, headers=headers, timeout=30)
             if res.status_code!= 200:
-                print(f" Page {page_num} not found (Status {res.status_code}), stopping.")
+                log(f" ⚠️ Page {page_num} not found (Status {res.status_code}), stopping this book.")
                 break
 
             soup = BeautifulSoup(res.text, 'html.parser')
 
-            # 1. কিতাবের নাম বের করা (প্রথম পেজ থেকে)
             if page_num == 1:
-                # Title tag বা h1 থেকে নাম বের করার চেষ্টা
                 title_tag = soup.find('h1') or soup.find('title')
                 if title_tag:
                     raw_title = title_tag.get_text()
-                    # "Page 1 - Title - DawateIslami" থেকে Title বের করা
                     raw_title = raw_title.split('-')[0] if 'DawateIslami' in raw_title else raw_title
                     book_title = clean_folder_name(final_clean(raw_title))
                     if not book_title:
                         book_title = f"pamphlet_{pamphlet_id}"
-                print(f" Title Found: {book_title}")
+                log(f" 📖 Title Found: {book_title}")
 
-            # 2. পেজের মূল টেক্সট বের করা - dawateislami এর জন্য কয়েকটি selector ট্রাই
             content_div = (
                 soup.find('div', class_='book-content') or
                 soup.find('div', class_='page-content') or
                 soup.find('article') or
                 soup.find('div', id='content')
             )
-
-            if content_div:
-                page_text = content_div.get_text(separator=' ', strip=True)
-            else:
-                # fallback: body এর সব p ট্যাগ
-                page_text = ' '.join([p.get_text() for p in soup.find_all('p')])
-
+            page_text = content_div.get_text(separator=' ', strip=True) if content_div else ' '.join([p.get_text() for p in soup.find_all('p')])
             page_text = final_clean(page_text)
 
-            # যদি পেজে 50 ক্যারেক্টারের কম লেখা থাকে, তাহলে শেষ ধরে নিবো
             if len(page_text) < 50:
-                print(f" Page {page_num} empty, ending book.")
+                log(f" ⏹️ Page {page_num} empty (<50 chars), ending.")
                 break
 
             full_book_text += page_text + "\n\n"
-            print(f" Scraped page {page_num} -> {len(page_text)} chars")
+            total_chars += len(page_text)
+            log(f" ✅ Page {page_num} done - {len(page_text)} chars")
             page_num += 1
-            time.sleep(1.5) # সার্ভারে চাপ কমাতে
+            time.sleep(1)
 
         except Exception as e:
-            print(f" Error on ID {pamphlet_id} page {page_num}: {e}")
+            log(f" ❌ Error on ID {pamphlet_id} Page {page_num}: {e}")
             break
 
-    # ফাইল সেভ করা
     if full_book_text:
         safe_file_name = clean_folder_name(book_title) + ".txt"
         file_path = os.path.join(OUTPUT_FOLDER, safe_file_name)
         with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(f"{book_title}\n")
-            f.write(f"ID: {pamphlet_id}\n")
-            f.write(f"Source: https://www.dawateislami.net/pamphlets/{pamphlet_id}\n")
-            f.write("="*40 + "\n\n")
-            f.write(full_book_text)
-        print(f" -> Saved: {file_path}")
+            f.write(f"{book_title}\nID: {pamphlet_id}\nSource: https://www.dawateislami.net/pamphlets/{pamphlet_id}\n{'='*40}\n\n{full_book_text}")
+        log(f"💾 SAVED: {file_path} | Total Pages: {page_num-1} | Total Chars: {total_chars}")
+        success_count += 1
     else:
-        print(f" -> No content found for ID {pamphlet_id}")
+        log(f"❌ FAILED: No content for ID {pamphlet_id}")
+        fail_count += 1
 
-print("\nAll done!")
+log(f"\n==================================================")
+log(f"=== Scraping Finished ===")
+log(f"✅ Success: {success_count} | ❌ Failed: {fail_count} | Total: {len(PAMPHLET_IDS)}")
+log(f"==================================================")
