@@ -1,0 +1,30 @@
+name: Convert TXT to JSON
+
+on:
+  push:
+    paths:
+      - 'txt/**'
+      - 'text_json.py'
+  workflow_dispatch:
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Run conversion script
+        run: python text_json.py
+
+      - name: Commit and push generated JSON files
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add json/
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-convert TXT to JSON" && git push)
