@@ -1,0 +1,58 @@
+name: Find and Replace
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_path:
+        description: 'ফাইল পাথ (যেমন: folder/file.txt)'
+        required: true
+        type: string
+      find:
+        description: 'যা খুঁজতে চান (Find)'
+        required: true
+        type: string
+      replace:
+        description: 'যা দিয়ে প্রতিস্থাপন করতে চান (Replace - ফাঁকা রাখলে মুছে যাবে)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  find-and-replace:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find and Replace
+        run: |
+          python3 -c "
+          import os
+
+          file_path = '''${{ inputs.file_path }}'''
+          find_str = '''${{ inputs.find }}'''
+          replace_str = '''${{ inputs.replace }}'''
+
+          if not os.path.exists(file_path):
+              print(f'Error: File {file_path} not found!')
+              exit(1)
+
+          with open(file_path, 'r', encoding='utf-8') as f:
+              content = f.read()
+
+          new_content = content.replace(find_str, replace_str)
+
+          with open(file_path, 'w', encoding='utf-8') as f:
+              f.write(new_content)
+
+          print('Find and replace successfully completed.')
+          "
+
+      - name: Commit and Push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ inputs.file_path }}"
+          git status
+          git diff-index --quiet HEAD || git commit -m "Automated find and replace in ${{ inputs.file_path }}"
+          git push
