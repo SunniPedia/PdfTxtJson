@@ -1,0 +1,166 @@
+name: Pamphlet Heading Processor with Backup
+
+on:
+  push:
+    paths:
+      - 'pamphletTxt/**.txt'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mode: process or restore'
+        required: true
+        default: 'process'
+        type: choice
+        options:
+          - process
+          - restore
+      backup_to_restore:
+        description: 'Restore করতে কোন backup folder? (e.g. backup_2024...) খালি রাখলে latest'
+        required: false
+        type: string
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore Mode
+        if: ${{ github.event.inputs.mode == 'restore' }}
+        run: |
+          python3 << 'PY'
+          import os, shutil
+          from pathlib import Path
+
+          backup_root = Path("pamphletTxt_backup")
+          if not backup_root.exists():
+              print("No backup folder found!")
+              exit(1)
+
+          target_backup_name = "${{ github.event.inputs.backup_to_restore }}"
+          if target_backup_name:
+              backup_dir = backup_root / target_backup_name
+          else:
+              # latest backup
+              dirs = sorted([d for d in backup_root.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
+              if not dirs:
+                  print("No backup found")
+                  exit(1)
+              backup_dir = dirs[0]
+
+          print(f"Restoring from: {backup_dir}")
+          for f in backup_dir.glob("*.txt"):
+              dest = Path("pamphletTxt") / f.name
+              shutil.copy2(f, dest)
+              print(f"Restored {f.name}")
+
+          PY
+
+      - name: Backup + Process Mode
+        if: ${{ github.event.inputs.mode!= 'restore' }}
+        run: |
+          python3 << 'PY'
+          import os, shutil, re
+          from pathlib import Path
+          from datetime import datetime
+
+          folder = Path("pamphletTxt")
+          backup_root = Path("pamphletTxt_backup")
+          backup_root.mkdir(exist_ok=True)
+
+          # 1. BACKUP CREATE
+          timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+          backup_dir = backup_root / f"backup_{timestamp}"
+          backup_dir.mkdir()
+
+          for file_path in folder.glob("*.txt"):
+              shutil.copy2(file_path, backup_dir / file_path.name)
+              #.bak file ও রাখা হলো same folder এ
+              shutil.copy2(file_path, folder / (file_path.name + ".bak"))
+
+          print(f"Backup created at: {backup_dir}")
+
+          # 2. PROCESSING - 1 add logic
+          for file_path in folder.glob("*.txt"):
+              if file_path.suffix == ".bak":
+                  continue
+              if ".bak" in file_path.name:
+                  continue
+
+              filename_without_ext = file_path.stem
+              print(f"Processing: {file_path}")
+
+              text = file_path.read_text(encoding="utf-8")
+              lines = text.splitlines()
+              new_lines = []
+
+              first_heading = f"1{filename_without_ext}"
+
+              # যদি প্রথম লাইনে filename না থাকে
+              if not lines or not lines[0].strip().startswith(f"1{filename_without_ext}"):
+                  new_lines.append(first_heading)
+                  new_lines.append("")
+              else:
+                  # skip old first heading, will add fresh
+                  # first line টা বাদ দিয়ে বাকি process করবো
+                  if lines[0].strip() == first_heading or lines[0].strip() == filename_without_ext:
+                      lines = lines[1:]
+                  new_lines.append(first_heading)
+                  new_lines.append("")
+
+              i = 0
+              while i < len(lines):
+                  line = lines[i]
+                  stripped = line.strip()
+
+                  if not stripped:
+                      new_lines.append(line)
+                      i+=1
+                      continue
+
+                  if stripped.startswith("1") and len(stripped) > 1:
+                      # আগে থেকেই 1 আছে
+                      new_lines.append(line)
+                      i+=1
+                      continue
+
+                  # Heading detect
+                  is_heading = False
+                  prev_empty = (i == 0) or (lines[i-1].strip() == "")
+                  next_empty = (i == len(lines)-1) or (lines[i+1].strip() == "")
+
+                  if prev_empty and next_empty:
+                      if 2 <= len(stripped) <= 60 and len(stripped.split()) <= 8:
+                          if not stripped.endswith("।") and not stripped.startswith("(") and "صَلُّوْا" not in stripped:
+                              if not re.match(r'^[০-৯0-9]+\s*[.।]', stripped):
+                                  if not re.match(r'^\(.*\)$', stripped):
+                                      is_heading = True
+
+                  if is_heading:
+                      new_lines.append(f"1{stripped}")
+                  else:
+                      new_lines.append(line)
+                  i+=1
+
+              file_path.write_text("\n".join(new_lines), encoding="utf-8")
+          PY
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add pamphletTxt/ pamphletTxt_backup/
+          git diff --staged --quiet || git commit -m "Backup + Add 1 before headings [${{ github.event.inputs.mode || 'auto' }}]"
+          git push
+
+      - name: Upload backup as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ github.run_number }}
+          path: pamphletTxt_backup/
+          retention-days: 30
