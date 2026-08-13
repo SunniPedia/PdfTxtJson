@@ -61,8 +61,14 @@ for p_id in PAMPHLET_IDS:
     page = 1
     pamphlet_text = ""
     has_data = False
-    book_title = ""
+    book_title = f"Important_{p_id}"
     print(f"\n========== Starting New Session for Pamphlet {p_id} ==========")
+
+    # আগেই চেক - important_{number}.txt ফরম্যাটে
+    file_path_check = os.path.join(OUTPUT_FOLDER, f"Important_{p_id}.txt")
+    if os.path.exists(file_path_check):
+        print(f"Skipping Pamphlet {p_id}, already exists at {file_path_check}")
+        continue
 
     while True:
         url = BASE_URL.format(p_id, page)
@@ -75,24 +81,6 @@ for p_id in PAMPHLET_IDS:
                 break
 
             soup = BeautifulSoup(res.text, "html.parser")
-
-            # প্রথম পেজে কিতাবের নাম খুঁজে বের করা (ফাইলের নামের জন্য)
-            if page == 1:
-                title_tag = soup.find("h1") or soup.find("h2") or soup.find("title")
-                if title_tag:
-                    book_title = title_tag.get_text(strip=True)
-
-                if not book_title:
-                    book_title = f"pamphlet_{p_id}"
-                else:
-                    book_title = f"{clean_folder_name(book_title)}_{p_id}"
-
-                # চেক করা যে এটি আগে pamphletTXT ফোল্ডারে স্ক্র্যাপ করা হয়েছে কিনা
-                file_path = os.path.join(OUTPUT_FOLDER, f"{book_title}.txt")
-
-                if os.path.exists(file_path):
-                    print(f"Skipping Pamphlet {p_id}, already exists at {file_path}")
-                    break
 
             div = soup.find("div", class_="WordSection1")
             if not div:
@@ -125,22 +113,20 @@ for p_id in PAMPHLET_IDS:
     # প্রতিটি কিতাব আলাদা সেশনে pamphletTXT ফোল্ডারে সেভ ও পুশ করা
     if has_data and pamphlet_text.strip():
         try:
-            file_path = os.path.join(OUTPUT_FOLDER, f"{book_title}.txt")
+            file_path = os.path.join(OUTPUT_FOLDER, f"Important_{p_id}.txt")
 
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(pamphlet_text)
             print(f"Saved: {file_path}")
 
-            # প্রতিটা কিতাব আলাদা আলাদা সেশনে Commit এবং Push
+            # FIX: প্রতিটা পুশের আগে pull --rebase যাতে rejected error না আসে
+            run_git_command('git pull --rebase origin main || git pull --rebase || true')
             run_git_command(f'git add "{file_path}"')
-            run_git_command(f'git add "{OUTPUT_FOLDER}"')
-            run_git_command(f'git commit -m "Add pamphlet {p_id}: {book_title}"')
-            run_git_command('git push')
+            run_git_command(f'git commit -m "Add pamphlet {p_id}: Important_{p_id}" || echo "Nothing to commit"')
+            run_git_command('git push || (git pull --rebase origin main && git push)')
 
             print(f"Pushed Pamphlet {p_id} to GitHub successfully in separate session.\n")
             print(f"========== Session Ended for Pamphlet {p_id} ==========\n")
 
         except Exception as e:
             print(f"Save/Push error for Pamphlet {p_id}: {e}\n")
-    else:
-        print(f"No data to save for Pamphlet {p_id}\n")
