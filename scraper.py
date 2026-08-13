@@ -4,25 +4,18 @@ import requests
 from bs4 import BeautifulSoup
 import html
 import re
-from datetime import datetime
 
 INPUT_FILE = "pamphlet.txt"
 OUTPUT_FOLDER = "pamphletTXT"
-LOG_FILE = "scraping.log"
+
 BASE_URL = "https://www.dawateislami.net/pamphlets/{}/page/{}"
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 }
 
-def log(msg):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{timestamp}] {msg}"
-    print(line)
-    with open(LOG_FILE, 'a', encoding='utf-8') as f:
-        f.write(line + "\n")
-
 def clean_folder_name(name):
+    # ফোল্ডারের নামে ব্যবহার করা যাবে না এমন ক্যারেক্টারগুলো সরানো
     cleaned = re.sub(r'[\\/*?:"<>|]', '', name)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return cleaned
@@ -36,110 +29,118 @@ def final_clean(text):
     text = re.sub(r' +', ' ', text)
     return text.strip()
 
-def load_ids_from_file(filepath):
+def run_git_command(cmd):
+    return os.system(cmd)
+
+def load_ids_from_txt(filepath):
     if not os.path.exists(filepath):
+        print(f"ERROR: {filepath} not found!")
         return []
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
     ids = re.split(r'[,\n|\s]+', content)
-    clean_ids = [int(i.strip()) for i in ids if i.strip().isdigit()]
-    return list(dict.fromkeys(clean_ids))
+    clean_ids = []
+    for i in ids:
+        i = i.strip()
+        if i.isdigit():
+            clean_ids.append(int(i))
+    clean_ids = list(dict.fromkeys(clean_ids))
+    print(f"Loaded {len(clean_ids)} IDs from {filepath}: {clean_ids}")
+    return clean_ids
 
-# Log start fresh
-if os.path.exists(LOG_FILE):
-    os.remove(LOG_FILE)
+# GitHub Actions-এ Git User Config সেট করা
+run_git_command('git config --global user.name "github-actions[bot]"')
+run_git_command('git config --global user.email "github-actions[bot]@users.noreply.github.com"')
 
-log(f"=== Scraping Started ===")
-PAMPHLET_IDS = load_ids_from_file(INPUT_FILE)
-log(f"Found {len(PAMPHLET_IDS)} IDs from {INPUT_FILE}")
-
+# pamphletTXT ফোল্ডার তৈরি করা
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-for pamphlet_id in PAMPHLET_IDS:
-    log(f"\n--------------------------------------------------")
-    log(f"▶️ ID: {pamphlet_id} - https://www.dawateislami.net/pamphlets/{pamphlet_id}")
+PAMPHLET_IDS = load_ids_from_txt(INPUT_FILE)
 
-    full_book_text = ""
-    book_title = f"pamphlet_{pamphlet_id}"
-    seen_hashes = set()
-    total_pages_site = None
+for p_id in PAMPHLET_IDS:
+    page = 1
+    pamphlet_text = ""
+    has_data = False
+    book_title = ""
+    print(f"\n========== Starting New Session for Pamphlet {p_id} ==========")
 
-    for page_num in range(1, 1000): # Safety limit 1000, কিন্তু আগেই থামবে
-        url = BASE_URL.format(pamphlet_id, page_num)
-        log(f" -> Page {page_num} fetching...")
+    while True:
+        url = BASE_URL.format(p_id, page)
+        print(f"Scraping Pamphlet {p_id} - Page {page}...")
 
         try:
-            res = requests.get(url, headers=headers, timeout=30)
-            if res.status_code != 200:
-                log(f" ⏹️ Status {res.status_code}, ending book.")
+            res = requests.get(url, headers=headers, timeout=15)
+            if res.status_code!= 200:
+                print(f"Page {page} returned status {res.status_code}. Stopping pamphlet {p_id}.")
                 break
 
-            soup = BeautifulSoup(res.text, 'html.parser')
+            soup = BeautifulSoup(res.text, "html.parser")
 
-            # 1. Total Pages বের করা - সাইটেই দেওয়া আছে
-            if page_num == 1:
-                # পেজে "Total Pages" লেখাটা থাকে
-                total_text = soup.get_text()
-                match = re.search(r'Total Pages\s*(\d+)', total_text, re.IGNORECASE)
-                if match:
-                    total_pages_site = int(match.group(1))
-                    log(f" 📄 Site says Total Pages = {total_pages_site}")
-                
-                title_tag = soup.find('h1')
+            # প্রথম পেজে কিতাবের নাম খুঁজে বের করা (ফাইলের নামের জন্য)
+            if page == 1:
+                title_tag = soup.find("h1") or soup.find("h2") or soup.find("title")
                 if title_tag:
-                    book_title = clean_folder_name(final_clean(title_tag.get_text())) or book_title
-                log(f" 📖 Title: {book_title}")
+                    book_title = title_tag.get_text(strip=True)
 
-            # 2. আসল কন্টেন্ট বের করা
-            # আগের ভুল selector বাদ দিয়ে শুধু main text area
-            content_area = soup.find('div', class_='book-reader') or soup.find('main') or soup.find('div', {'id': 'book-reader'})
-            # Fallback: body থেকে নয়, নির্দিষ্ট div
-            if content_area:
-                page_text = content_area.get_text(separator=' ', strip=True)
+                if not book_title:
+                    book_title = f"pamphlet_{p_id}"
+                else:
+                    book_title = f"{clean_folder_name(book_title)}_{p_id}"
+
+                # চেক করা যে এটি আগে pamphletTXT ফোল্ডারে স্ক্র্যাপ করা হয়েছে কিনা
+                file_path = os.path.join(OUTPUT_FOLDER, f"{book_title}.txt")
+
+                if os.path.exists(file_path):
+                    print(f"Skipping Pamphlet {p_id}, already exists at {file_path}")
+                    break
+
+            div = soup.find("div", class_="WordSection1")
+            if not div:
+                print(f"No WordSection1 div found on page {page}. Stopping pamphlet {p_id}.")
+                break
+
+            paragraphs = div.find_all("p")
+            page_text = ""
+
+            for p in paragraphs:
+                raw_text = p.get_text(separator=' ', strip=True)
+                cleaned_text = final_clean(raw_text)
+                if cleaned_text:
+                    page_text += cleaned_text + "\n\n"
+
+            if page_text.strip():
+                pamphlet_text += page_text
+                has_data = True
+                page += 1
             else:
-                # সব p নয়, শুধু যেখানে আরবি/বাংলা বেশি
-                page_text = ' '.join([p.get_text(separator=' ') for p in soup.select('div p')][:20])
-
-            page_text = final_clean(page_text)
-
-            # 3. --- ৩টা থামার শর্ত ---
-            # ক) কন্টেন্ট খুব ছোট হলে
-            if len(page_text) < 80:
-                log(f" ⏹️ Page too small ({len(page_text)} chars), ending.")
+                print(f"No valid text on page {page}. Stopping pamphlet {p_id}.")
                 break
 
-            # খ) একই কন্টেন্ট বারবার আসলে (তোমার 556 chars সমস্যার ফিক্স)
-            text_hash = hash(page_text[:200]) # প্রথম 200 অক্ষর দিয়ে চেক
-            if text_hash in seen_hashes:
-                log(f" ⏹️ Duplicate content detected, ending. (Loop fixed)")
-                break
-            seen_hashes.add(text_hash)
-
-            # গ) সাইটের Total Pages পার হয়ে গেলে
-            if total_pages_site and page_num > total_pages_site:
-                log(f" ⏹️ Reached site Total Pages ({total_pages_site}), ending.")
-                break
-
-            full_book_text += f"--- Page {page_num} ---\n" + page_text + "\n\n"
-            log(f" ✅ Page {page_num} OK - {len(page_text)} chars")
-
-            # যদি Total Pages জানা থাকে, সেখানেই থামো
-            if total_pages_site and page_num >= total_pages_site:
-                log(f" ✅ Reached last page {total_pages_site}")
-                break
-
-            time.sleep(0.8)
+            time.sleep(0.5)
 
         except Exception as e:
-            log(f" ❌ Error: {e}")
+            print(f"Error on Pamphlet {p_id}, Page {page}: {e}")
             break
 
-    if full_book_text:
-        file_path = os.path.join(OUTPUT_FOLDER, clean_folder_name(book_title) + ".txt")
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(f"{book_title}\nID: {pamphlet_id}\n{'='*40}\n\n{full_book_text}")
-        log(f"💾 SAVED: {file_path} | Pages: {page_num}")
-    else:
-        log(f"❌ FAILED: {pamphlet_id}")
+    # প্রতিটি কিতাব আলাদা সেশনে pamphletTXT ফোল্ডারে সেভ ও পুশ করা
+    if has_data and pamphlet_text.strip():
+        try:
+            file_path = os.path.join(OUTPUT_FOLDER, f"{book_title}.txt")
 
-log(f"\n=== All Done ===")
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(pamphlet_text)
+            print(f"Saved: {file_path}")
+
+            # প্রতিটা কিতাব আলাদা আলাদা সেশনে Commit এবং Push
+            run_git_command(f'git add "{file_path}"')
+            run_git_command(f'git add "{OUTPUT_FOLDER}"')
+            run_git_command(f'git commit -m "Add pamphlet {p_id}: {book_title}"')
+            run_git_command('git push')
+
+            print(f"Pushed Pamphlet {p_id} to GitHub successfully in separate session.\n")
+            print(f"========== Session Ended for Pamphlet {p_id} ==========\n")
+
+        except Exception as e:
+            print(f"Save/Push error for Pamphlet {p_id}: {e}\n")
+    else:
+        print(f"No data to save for Pamphlet {p_id}\n")
