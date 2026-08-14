@@ -1,9 +1,7 @@
 name: Cleanup Matched Pamphlet TXT
 
 on:
-  workflow_dispatch: # তুমি চাইলে হাতে ক্লিক করে রান করতে পারবে
-  schedule:
-    - cron: '0 0 * * *' # প্রতিদিন রাতে একবার চেক করবে, লাগলে বন্ধ করে দিও
+  workflow_dispatch:
   push:
     paths:
       - 'pamphletTXT/**'
@@ -26,19 +24,18 @@ jobs:
       - name: Fetch JSON and Delete Matched TXT Files
         run: |
           python3 << 'PY'
-          import requests
           import os
           import json
           import glob
+          import urllib.request
           from pathlib import Path
 
           CDN_URL = "https://cdn.jsdelivr.net/gh/srizwan198704-dev/IslamiEncyclopedia@main/app/src/main/assets/file.json"
           FOLDER = "pamphletTXT"
 
           print(f"Fetching JSON from: {CDN_URL}")
-          r = requests.get(CDN_URL)
-          r.encoding = 'utf-8'
-          data = r.json()
+          with urllib.request.urlopen(CDN_URL) as response:
+              data = json.loads(response.read().decode('utf-8'))
 
           # json থেকে সব name এর লিস্ট বানাও
           json_names = set()
@@ -56,20 +53,16 @@ jobs:
           deleted_count = 0
           for txt_path in txt_files:
               p = Path(txt_path)
-              file_name_without_ext = p.stem.strip() # .txt বাদ দিয়ে নাম
+              file_name_without_ext = p.stem.strip()
               
-              # ম্যাচ চেক - json এর name এর সাথে txt ফাইলের নাম মিললে
               if file_name_without_ext in json_names:
-                  print(f"Matched & Deleting: {txt_path} -> matched with JSON name: {file_name_without_ext}")
+                  print(f"Matched & Deleting: {txt_path}")
                   os.remove(txt_path)
                   deleted_count += 1
           
           print(f"Total deleted: {deleted_count}")
-
-          # GitHub ENV তে সেট করে দিলাম যাতে পরের step এ commit করতে পারে
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write(f"DELETED_COUNT={deleted_count}\n")
-
           PY
 
       - name: Commit and Push if Deleted
@@ -78,9 +71,8 @@ jobs:
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git add -A
-            git commit -m "Auto deleted $DELETED_COUNT matched pamphletTXT files that exist in file.json"
+            git commit -m "Auto deleted $DELETED_COUNT matched pamphletTXT files"
             git push
-            echo "Pushed $DELETED_COUNT deletions"
           else
             echo "No file matched, nothing to delete."
           fi
