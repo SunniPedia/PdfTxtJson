@@ -49,7 +49,6 @@ jobs:
                   print(f"Backup {target_backup_name} not found!")
                   exit(1)
           else:
-              # latest backup
               dirs = sorted([d for d in backup_root.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
               if not dirs:
                   print("No backup found")
@@ -77,7 +76,6 @@ jobs:
           backup_root.mkdir(exist_ok=True)
           folder.mkdir(exist_ok=True)
 
-          # 1. BACKUP CREATE
           timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
           backup_dir = backup_root / f"backup_{timestamp}"
           backup_dir.mkdir()
@@ -91,12 +89,10 @@ jobs:
               if file_path.name.endswith(".bak"):
                   continue
               shutil.copy2(file_path, backup_dir / file_path.name)
-              #.bak file same folder এ
               shutil.copy2(file_path, folder / (file_path.name + ".bak"))
 
           print(f"Backup created at: {backup_dir} | Files: {len(txt_files)}")
 
-          # 2. PROCESSING - 1 add logic
           ARABIC_RE = re.compile(r'[\u0600-\u06FF]')
 
           def is_arabic_text(s):
@@ -107,17 +103,13 @@ jobs:
                   continue
 
               filename_without_ext = file_path.stem
-              print(f"Processing: {file_path}")
-
               text = file_path.read_text(encoding="utf-8")
               lines = text.splitlines()
               new_lines = []
 
               first_heading = f"1{filename_without_ext}"
 
-              # যদি প্রথম লাইনে filename না থাকে
               if not lines or not lines[0].strip().startswith(f"1{filename_without_ext}"):
-                  # যদি আগের heading টা শুধু filename হয়ে থাকে সেটা বাদ দাও
                   if lines and lines[0].strip() == filename_without_ext:
                       lines = lines[1:]
                   new_lines.append(first_heading)
@@ -125,10 +117,8 @@ jobs:
               else:
                   new_lines.append(first_heading)
                   new_lines.append("")
-                  # duplicate first heading skip
                   if lines and (lines[0].strip() == first_heading or lines[0].strip() == filename_without_ext):
                       lines = lines[1:]
-                      # তার পরের খালি লাইনও skip
                       if lines and lines[0].strip() == "":
                           lines = lines[1:]
 
@@ -143,28 +133,27 @@ jobs:
                       continue
 
                   if stripped.startswith("1") and len(stripped) > 1:
-                      # আগে থেকেই 1 আছে
                       new_lines.append(line)
                       i+=1
                       continue
 
-                  # Heading detect
                   is_heading = False
                   prev_empty = (i == 0) or (lines[i-1].strip() == "")
                   next_empty = (i == len(lines)-1) or (lines[i+1].strip() == "")
 
                   if prev_empty and next_empty:
                       if 2 <= len(stripped) <= 60 and len(stripped.split()) <= 8:
-                          # আরবি হেডিং হলে 1 যুক্ত হবে না
                           if is_arabic_text(stripped):
+                              is_heading = False
+                          elif stripped.startswith("("):
+                              is_heading = False
+                          elif re.match(r'^\(.*\)$', stripped):
                               is_heading = False
                           elif not stripped.endswith("।"):
                               if not re.match(r'^[০-৯0-9]+\s*[.।]', stripped):
-                                  # () কে এখন আর বাদ দিচ্ছি না, হেডিং হিসেবে ধরবো
                                   is_heading = True
 
                   if is_heading:
-                      # () এর ক্ষেত্রে 1() হবে, যেমন (ভূমিকা) -> 1(ভূমিকা)
                       new_lines.append(f"1{stripped}")
                   else:
                       new_lines.append(line)
