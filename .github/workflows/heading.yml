@@ -97,6 +97,11 @@ jobs:
           print(f"Backup created at: {backup_dir} | Files: {len(txt_files)}")
 
           # 2. PROCESSING - 1 add logic
+          ARABIC_RE = re.compile(r'[\u0600-\u06FF]')
+
+          def is_arabic_text(s):
+              return bool(ARABIC_RE.search(s))
+
           for file_path in folder.glob("*.txt"):
               if file_path.name.endswith(".bak"):
                   continue
@@ -150,12 +155,16 @@ jobs:
 
                   if prev_empty and next_empty:
                       if 2 <= len(stripped) <= 60 and len(stripped.split()) <= 8:
-                          if not stripped.endswith("।") and not stripped.startswith("(") and "صَلُّوْا" not in stripped:
+                          # আরবি হেডিং হলে 1 যুক্ত হবে না
+                          if is_arabic_text(stripped):
+                              is_heading = False
+                          elif not stripped.endswith("।"):
                               if not re.match(r'^[০-৯0-9]+\s*[.।]', stripped):
-                                  if not re.match(r'^\(.*\)$', stripped):
-                                      is_heading = True
+                                  # () কে এখন আর বাদ দিচ্ছি না, হেডিং হিসেবে ধরবো
+                                  is_heading = True
 
                   if is_heading:
+                      # () এর ক্ষেত্রে 1() হবে, যেমন (ভূমিকা) -> 1(ভূমিকা)
                       new_lines.append(f"1{stripped}")
                   else:
                       new_lines.append(line)
