@@ -1,0 +1,38 @@
+name: Dynamic File Mover
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_path:
+        description: 'যে ফাইল বা ফোল্ডার মুভ করতে চান তার পাত (Path/Name)'
+        required: true
+        default: 'my-file.txt'
+        type: string
+      target_folder:
+        description: 'যে ফোল্ডারে মুভ করতে চান তার নাম (Target Directory)'
+        required: true
+        default: 'destination-folder'
+        type: string
+
+jobs:
+  move-file:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create target directory if not exists
+        run: |
+          mkdir -p "${{ github.event.inputs.target_folder }}"
+
+      - name: Move file to target directory
+        run: |
+          mv "${{ github.event.inputs.source_path }}" "${{ github.event.inputs.target_folder }}/"
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Move ${{ github.event.inputs.source_path }} to ${{ github.event.inputs.target_folder }}" || echo "No changes to commit"
+          git push
