@@ -117,12 +117,12 @@ def main():
     print(f"Found {len(image_files)} images to process.")
 
     batch_size = 50
-    
+
     for i in range(0, len(image_files), batch_size):
         batch = image_files[i:i + batch_size]
         start_num = i + 1
         end_num = i + len(batch)
-        
+
         batch_filename = f"part8_batch_{start_num:04d}-{end_num:04d}.txt"
         batch_path = os.path.join(output_dir, batch_filename)
 
@@ -136,18 +136,18 @@ def main():
         for img_path in batch:
             base_name = os.path.basename(img_path)
             print(f"Processing: {base_name}...")
-            
+
             try:
                 uploaded_file = client.files.upload(file=img_path)
-                
+
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash-lite',
+                    model='gemini-3.5-flash-lite',
                     contents=[uploaded_file, SYSTEM_PROMPT]
                 )
 
                 page_text = response.text if response.text else ""
                 batch_texts.append(page_text.strip())
-                
+
                 print(f"Successfully processed {base_name}")
                 time.sleep(2)
 
