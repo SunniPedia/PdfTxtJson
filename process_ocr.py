@@ -118,7 +118,6 @@ def main():
 
     batch_size = 50
     
-    # প্রতি ৫০টি করে ব্যাচে ভাগ করা
     for i in range(0, len(image_files), batch_size):
         batch = image_files[i:i + batch_size]
         start_num = i + 1
@@ -141,8 +140,9 @@ def main():
             try:
                 uploaded_file = client.files.upload(file=img_path)
                 
+                # Gemini 2.x সিরিজের সঠিক মডেল নাম: gemini-2.0-flash
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-2.0-flash',
                     contents=[uploaded_file, SYSTEM_PROMPT]
                 )
 
@@ -156,7 +156,6 @@ def main():
                 print(f"Error processing {base_name}: {e}")
                 batch_texts.append(f"[Error processing {base_name}]")
 
-        # ৫০টি পৃষ্ঠার লেখা এক সাথে যুক্ত করে ব্যাচ ফাইল সেভ
         combined_content = "\n\n".join(batch_texts)
         with open(batch_path, "w", encoding="utf-8") as f:
             f.write(combined_content)
