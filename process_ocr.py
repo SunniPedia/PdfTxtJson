@@ -140,9 +140,8 @@ def main():
             try:
                 uploaded_file = client.files.upload(file=img_path)
                 
-                # Gemini 2.x সিরিজের সঠিক মডেল নাম: gemini-2.0-flash
                 response = client.models.generate_content(
-                    model='gemini-2.0-flash',
+                    model='gemini-2.5-flash',
                     contents=[uploaded_file, SYSTEM_PROMPT]
                 )
 
