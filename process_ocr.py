@@ -141,7 +141,7 @@ def main():
                 uploaded_file = client.files.upload(file=img_path)
                 
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-2.5-flash-lite',
                     contents=[uploaded_file, SYSTEM_PROMPT]
                 )
 
