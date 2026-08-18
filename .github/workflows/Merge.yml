@@ -1,0 +1,134 @@
+name: Merge Kanzul Iman Para to text.json
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'Kanzuliman/KhazaiNulirfan/para_*.json'
+      - 'Kanzuliman/KhazaiNulirfan/text.json'
+      - 'text.json'
+  workflow_dispatch:
+
+jobs:
+  merge-books:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Merge Para files into text.json
+        run: |
+          python << 'PY'
+          import json, os, glob, re
+          from pathlib import Path
+
+          # --- CONFIG ---
+          PARA_DIR = Path("Kanzuliman/KhazaiNulirfan")
+          if (PARA_DIR / "text.json").exists():
+              OLD_TEXT_PATH = PARA_DIR / "text.json"
+          elif Path("text.json").exists():
+              OLD_TEXT_PATH = Path("text.json")
+          else:
+              OLD_TEXT_PATH = None
+
+          OUTPUT_DIR = Path("output")
+          OUTPUT_DIR.mkdir(exist_ok=True)
+          OUTPUT_PATH = OUTPUT_DIR / "text.json"
+          PARA_PATTERN = str(PARA_DIR / "para_*.json")
+
+          FIXED_AUTHOR = """তরজমা: আ'লা হযরত ইমামে আহলে সুন্নাত মাওলানা শাহ মুহাম্মদ আহমাদ রেযা খান বেরলভী (رَحْمَةُ اللهِ تَعَالٰى عَلَيْهِ)
+          তাফসীর : সদরুল আফাযিল সৈয়দ মুহাম্মদ নাঈম উদ্দীন মুরাদাবাদী (رَحْمَةُ اللهِ تَعَالٰى عَلَيْهِ)
+          বঙ্গানুবাদ : আলহাজ মাওলানা মুহাম্মদ আবদুল মান্নান ©রিজওয়ান"""
+
+          def extract_para_number(filename):
+              m = re.search(r'para_(\d+)\.json', filename, re.IGNORECASE)
+              return int(m.group(1)) if m else 9999
+
+          def get_short_para_name(num):
+              # ১ম, ২য়, ৩য়, ৪র্থ... এভাবে
+              bn_digits = str(num).translate(str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯"))
+              # বাংলা ব্যাকরণ অনুযায়ী suffix
+              if num == 1:
+                  suffix = "ম"
+              elif num in [2, 3]:
+                  suffix = "য়"
+              else:
+                  suffix = "য়"
+              # তবে সাধারণ ব্যবহার ১ম, ২য়, ৩য়, ৪র্থ... তাই সব ক্ষেত্রে 'ম/য়' এর আগে logic
+              # সঠিক সংক্ষিপ্ত রূপের জন্য:
+              if num == 1:
+                  return f"{bn_digits}ম পারা"
+              elif num <= 10:
+                  return f"{bn_digits}য় পারা"
+              else:
+                  # ১১ম, ১২তম etc mixed, ১ম স্টাইলে রাখতে
+                  # ২১, ২২ etc
+                  if bn_digits.endswith("১"):
+                      return f"{bn_digits}ম পারা"
+                  else:
+                      return f"{bn_digits}য় পারা"
+
+          def load_chapters_from_para(para_path):
+              data = json.loads(Path(para_path).read_text(encoding='utf-8'))
+              if isinstance(data, list):
+                  return data
+              if isinstance(data, dict) and 'chapter' in data:
+                  return data['chapter']
+              if isinstance(data, dict) and '1' in data and '2' in data:
+                  return [data]
+              return [{"1": f"তাফসীর", "2": json.dumps(data, ensure_ascii=False)}]
+
+          para_files = sorted(glob.glob(PARA_PATTERN), key=extract_para_number)
+          print(f"Found para files: {para_files}")
+
+          new_books = []
+          for pf in para_files:
+              num = extract_para_number(pf)
+              short_name = get_short_para_name(num)
+              book_name = f"কানযুল ঈমান ও তাফসীরে খাযাইনুল ইরফান {short_name}"
+              chapters = load_chapters_from_para(pf)
+
+              new_books.append({
+                  "id": str(len(new_books)),
+                  "name": book_name,
+                  "author": FIXED_AUTHOR,
+                  "sub": "তাফসীর",
+                  "chapter": chapters
+              })
+              print(f" -> Added {book_name} with {len(chapters)} chapters")
+
+          old_books = []
+          if OLD_TEXT_PATH and OLD_TEXT_PATH.exists():
+              old_books = json.loads(OLD_TEXT_PATH.read_text(encoding='utf-8'))
+              print(f"Loaded old text.json with {len(old_books)} books from {OLD_TEXT_PATH}")
+          else:
+              print("No old text.json found")
+
+          final_books = []
+          all_books_raw = new_books + old_books
+
+          for idx, book in enumerate(all_books_raw):
+              book['id'] = str(idx)
+              book.setdefault('sub', 'ফিকহ')
+              book.setdefault('chapter', [])
+              final_books.append(book)
+
+          OUTPUT_PATH.write_text(json.dumps(final_books, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(f"SUCCESS: Final with {len(final_books)} books -> {OUTPUT_PATH}")
+          PY
+
+      - name: Commit and Push Output
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add output/text.json
+          git diff --staged --quiet || git commit -m "Auto merge Kanzul Iman paras (short name ©রিজওয়ান): $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
