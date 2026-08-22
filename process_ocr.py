@@ -1,7 +1,12 @@
 import os
 import glob
 import time
-from google import genai
+import base64
+import mimetypes
+import requests
+
+# Gemini API এর নিয়ম অনুযায়ী এপিআই কি-টি খালি রাখা হলো। রানটাইম পরিবেশ স্বয়ংক্রিয়ভাবে এটি হ্যান্ডেল করবে।
+api_key = ""
 
 SYSTEM_PROMPT = """You are a Universal High-Precision OCR Engine AND an Expert Islamic Manuscript Editor for ANY LANGUAGE.
 
@@ -46,7 +51,7 @@ Rule 2.0 - THE ONLY ALLOWED ADDITION:
 - Rule "No Addition" has ONE exception: Insertion of honorifics (ﷺ, عليه السلام etc) as defined below. Apart from this, you MUST NOT omit, shorten, or add any word, sentence, tafsir, or explanation that was not in image.
 
 Rule 2.1 - Allah's Name Spelling [LANGUAGE-SPECIFIC CONDITIONAL]:
-- IF the book language is Bengali/Bangla: Find all forms আল্লাহর, আল্লাহ্র -> MUST normalize to আল্লাহ্‌র using ZWNJ sequence: হ + ্ + ZWNJ + র. Apply everywhere.
+- IF the book language is Bengali/Bangla: Find all forms আল্লাহর, আল্লাহ্র -> MUST normalize to আল্লাহ্র using ZWNJ sequence: হ + ্ + ZWNJ + র. Apply everywhere.
 - IF the book language is other language: Keep Allah's name spelling as per standard of that language, do not force Bengali rule.
 
 Rule 2.2 - Rasulullah (ﷺ) Auto-Detection [UNIVERSAL - ANY LANGUAGE]:
@@ -92,12 +97,34 @@ Rule 2.7 - Handling Illegible Text:
 4. Do NOT keep separator symbols like □ in final output.
 5. Use grammar-safe honorific placement as per that language."""
 
-def main():
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY env variable not set.")
+def get_final_api_key():
+    global api_key
+    if api_key and api_key.strip()!= "":
+        return api_key.strip()
+    env_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if env_key:
+        return env_key.strip()
+    return ""
 
-    client = genai.Client(api_key=api_key)
+def image_to_base64(image_path):
+    mime_type, _ = mimetypes.guess_type(image_path)
+    if mime_type is None:
+        mime_type = "image/jpeg"
+    with open(image_path, "rb") as f:
+        data = base64.b64encode(f.read()).decode("utf-8")
+    return mime_type, data
+
+def main():
+    final_key = get_final_api_key()
+    if not final_key:
+        raise ValueError("API Key পাওয়া যায়নি! উপরে api_key = \"\" এর ভিতরে বসাও অথবা ENV তে GEMINI_API_KEY সেট করো।")
+
+    # === এখানে React এর মতোই API Key URL এ যোগ হচ্ছে ===
+    # fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`
+    model_name = "gemini-2.5-flash-preview-09-2025"
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={final_key}"
+
+    print(f"Using API URL pattern like React:.../models/{model_name}:generateContent?key=${{apiKey}}")
 
     folder_path = "part8"
     output_dir = "output_text"
@@ -107,30 +134,27 @@ def main():
     image_files = []
     for ext in extensions:
         image_files.extend(glob.glob(os.path.join(folder_path, ext)))
-
     image_files = sorted(image_files)
 
     if not image_files:
         print(f"No image files found in {folder_path}!")
         return
 
-    print(f"Found {len(image_files)} images to process.")
+    print(f"Found {len(image_files)} images.")
 
     batch_size = 50
-
     for i in range(0, len(image_files), batch_size):
         batch = image_files[i:i + batch_size]
         start_num = i + 1
         end_num = i + len(batch)
-
         batch_filename = f"part8_batch_{start_num:04d}-{end_num:04d}.txt"
         batch_path = os.path.join(output_dir, batch_filename)
 
         if os.path.exists(batch_path):
-            print(f"Skipping batch {batch_filename}, already exists.")
+            print(f"Skipping {batch_filename}, already exists.")
             continue
 
-        print(f"\n--- Processing Batch: {batch_filename} ({len(batch)} pages) ---")
+        print(f"\n--- Processing Batch: {batch_filename} ---")
         batch_texts = []
 
         for img_path in batch:
@@ -138,17 +162,34 @@ def main():
             print(f"Processing: {base_name}...")
 
             try:
-                uploaded_file = client.files.upload(file=img_path)
+                mime_type, b64_data = image_to_base64(img_path)
 
-                response = client.models.generate_content(
-                    model='gemini-3.5-flash-lite',
-                    contents=[uploaded_file, SYSTEM_PROMPT]
-                )
+                payload = {
+                    "contents": [{
+                        "role": "user",
+                        "parts": [
+                            {"text": SYSTEM_PROMPT},
+                            {"inlineData": {"mimeType": mime_type, "data": b64_data}}
+                        ]
+                    }],
+                    "generationConfig": {"temperature": 0.2}
+                }
 
-                page_text = response.text if response.text else ""
-                batch_texts.append(page_text.strip())
+                # React এর fetch এর মতোই Python requests
+                response = requests.post(api_url, json=payload, timeout=120)
 
-                print(f"Successfully processed {base_name}")
+                if response.status_code == 200:
+                    data = response.json()
+                    try:
+                        page_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    except:
+                        page_text = ""
+                    batch_texts.append(page_text.strip())
+                    print(f"Success: {base_name}")
+                else:
+                    print(f"API Error {response.status_code}: {response.text[:200]}")
+                    batch_texts.append(f"[Error {response.status_code} for {base_name}]")
+
                 time.sleep(2)
 
             except Exception as e:
@@ -158,8 +199,7 @@ def main():
         combined_content = "\n\n".join(batch_texts)
         with open(batch_path, "w", encoding="utf-8") as f:
             f.write(combined_content)
-
-        print(f"Saved Batch File: {batch_filename}")
+        print(f"Saved: {batch_filename}")
 
 if __name__ == "__main__":
     main()
