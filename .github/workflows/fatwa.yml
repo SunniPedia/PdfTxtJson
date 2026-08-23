@@ -38,7 +38,7 @@ jobs:
 
           all_pages_content = []
           page_num = 1
-          max_pages = 2000 # safety limit
+          max_pages = 244 # safety limit
 
           os.makedirs("output", exist_ok=True)
 
