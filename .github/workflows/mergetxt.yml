@@ -22,25 +22,21 @@ jobs:
 
       - name: Check tafsirpart folder
         run: |
-          echo "Checking files in tafsirpart/"
           ls -l tafsirpart/
-          echo "Total files: $(ls tafsirpart/part*.txt 2>/dev/null | wc -l)"
+          ls tafsirpart/part*.txt | wc -l
 
       - name: Merge part files in numeric order
+        env:
+          OUTPUT_NAME: ${{ inputs.output_filename }}
         run: |
           mkdir -p txt
-          OUTPUT_FILE="txt/${{ inputs.output_filename }}"
+          OUTPUT_PATH="txt/$OUTPUT_NAME"
+          echo "Merging to: $OUTPUT_PATH"
 
-          echo "Merging files to $OUTPUT_FILE..."
-
-          # part[1].txt and part1.txt both support korbe
           python3 << 'PY'
           import glob, re, os
-          output_file = os.environ.get("OUTPUT_FILE", "txt/merged_tafsir.txt")
-          # Use input from env
-          import pathlib
-          # Get output path from github input
-          output_path = f"txt/{os.getenv('OUTPUT_NAME')}"
+          output_name = os.getenv('OUTPUT_NAME')
+          output_path = f"txt/{output_name}"
 
           files = glob.glob('tafsirpart/part*.txt')
 
@@ -49,33 +45,33 @@ jobs:
               return int(m.group(1)) if m else 0
 
           files_sorted = sorted(files, key=get_num)
-          print(f"Found {len(files_sorted)} files in order: {files_sorted}")
+          print(f"Found files: {files_sorted}")
 
           if not files_sorted:
-              print("ERROR: tafsirpart/part*.txt kono file pai ni!")
+              print("ERROR: file not found!")
               exit(1)
 
           with open(output_path, 'w', encoding='utf-8') as outfile:
               for fname in files_sorted:
-                  print(f"Merging: {fname}")
                   with open(fname, 'r', encoding='utf-8', errors='ignore') as infile:
                       outfile.write(infile.read())
                       outfile.write('\n')
-
-          print(f"Merge complete -> {output_path}")
+          print(f"Done: {output_path}")
           PY
-        env:
-          OUTPUT_NAME: ${{ inputs.output_filename }}
 
-      - name: Show result
-        run: |
-          ls -lh "txt/${{ inputs.output_filename }}"
-          wc -l "txt/${{ inputs.output_filename }}"
+          ls -lh "$OUTPUT_PATH"
+          wc -l "$OUTPUT_PATH"
 
       - name: Commit and push merged file
+        env:
+          OUTPUT_NAME: ${{ inputs.output_filename }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add txt/${{ inputs.output_filename }}
-          git diff --staged --quiet || git commit -m "Merge tafsirpart into ${{ inputs.output_filename }}"
+
+          OUTPUT_PATH="txt/$OUTPUT_NAME"
+
+          # Quote use kora holo - ekhane ar error hobe na
+          git add "$OUTPUT_PATH"
+          git diff --staged --quiet || git commit -m "Merge tafsirpart into $OUTPUT_NAME"
           git push
