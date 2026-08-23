@@ -1,0 +1,64 @@
+name: Merge tafsirtxt parts
+
+on:
+  workflow_dispatch:
+    inputs:
+      output_filename:
+        description: 'Output file er naam ki hobe? (ex: complete.txt)'
+        required: true
+        default: 'merged_tafsir.txt'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  merge-files:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check tafsirtxt folder
+        run: |
+          echo "Checking files in tafsirtxt/"
+          ls -l tafsirtxt/
+          echo "Total files: $(ls tafsirtxt/part*.txt | wc -l)"
+
+      - name: Merge part files in numeric order
+        run: |
+          mkdir -p txt
+          OUTPUT_FILE="txt/${{ inputs.output_filename }}"
+
+          echo "Merging files to $OUTPUT_FILE..."
+
+          # Python diye number onujayi sort kore merge korbe - 100% safe
+          python3 -c "
+          import glob, re, os
+          files = glob.glob('tafsirtxt/part*.txt')
+          # part[1].txt ba part1.txt duitai support korbe
+          def get_num(f):
+              m = re.search(r'part\[?(\d+)\]?', f)
+              return int(m.group(1)) if m else 0
+          files_sorted = sorted(files, key=get_num)
+          print(f'Found files in order: {files_sorted}')
+          with open('$OUTPUT_FILE', 'w', encoding='utf-8') as outfile:
+              for fname in files_sorted:
+                  with open(fname, 'r', encoding='utf-8', errors='ignore') as infile:
+                      outfile.write(infile.read())
+                      outfile.write('\n')
+          print('Merge complete!')
+          "
+
+          echo "--- Merged file info ---"
+          ls -lh "txt/${{ inputs.output_filename }}"
+          wc -l "txt/${{ inputs.output_filename }}"
+
+      - name: Commit and push merged file
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add txt/${{ inputs.output_filename }}
+          git diff --staged --quiet || git commit -m "Merge tafsirtxt parts into ${{ inputs.output_filename }}"
+          git push
