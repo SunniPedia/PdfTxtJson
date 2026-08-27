@@ -1,0 +1,93 @@
+name: Rename Sura Files to bookid
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rename:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Rename all sura files from author to bookid
+        run: |
+          python << 'PY'
+          import json
+          import os
+          import pathlib
+
+          SURA_FOLDER = pathlib.Path("sura")
+          SURA_JSON = SURA_FOLDER / "sura.json"
+
+          print(f"Checking folder: {SURA_FOLDER.resolve()}")
+
+          with open(SURA_JSON, 'r', encoding='utf-8') as f:
+              sura_list = json.load(f)
+
+          renamed = 0
+          skipped = 0
+
+          for item in sura_list:
+              author = str(item.get("author", "")).strip()
+              bookid = str(item.get("bookid", "")).strip()
+
+              if not author or not bookid:
+                  continue
+
+              # পুরানো ফাইল খোঁজা
+              old_path = None
+              # 1. Direct match
+              direct = SURA_FOLDER / f"{author}.json"
+              if direct.exists():
+                  old_path = direct
+              else:
+                  # 2. Case-insensitive search for all json files
+                  for file in SURA_FOLDER.glob("*.json"):
+                      if file.name == "sura.json":
+                          continue
+                      if file.stem.lower() == author.lower():
+                          old_path = file
+                          break
+
+              if not old_path:
+                  print(f"[SKIP] Not found: {author}.json")
+                  skipped += 1
+                  continue
+
+              new_path = SURA_FOLDER / f"{bookid}.json"
+
+              if old_path.resolve() == new_path.resolve():
+                  continue
+
+              if new_path.exists():
+                  print(f"[SKIP] Already exists: {new_path.name}")
+                  continue
+
+              # Rename - ভিতরের data same থাকবে
+              os.rename(old_path, new_path)
+              print(f"[RENAME] {old_path.name} -> {new_path.name}")
+              renamed += 1
+
+          print(f"\nDone! Renamed: {renamed}, Not Found: {skipped}")
+          PY
+
+      - name: Commit and push
+        run: |
+          if [[ -z $(git status --porcelain) ]]; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add sura/
+          git commit -m "chore: rename sura files from author to bookid"
+          git push
