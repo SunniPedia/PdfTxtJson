@@ -1,10 +1,10 @@
-name: Rename Sura Files to bookid
+name: Rename and Zip Sura Folder
 
 on:
   workflow_dispatch:
 
 jobs:
-  rename:
+  rename-and-zip:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -21,36 +21,25 @@ jobs:
       - name: Rename all sura files from author to bookid
         run: |
           python << 'PY'
-          import json
-          import os
-          import pathlib
-
+          import json, os, pathlib
           SURA_FOLDER = pathlib.Path("sura")
           SURA_JSON = SURA_FOLDER / "sura.json"
-
-          print(f"Checking folder: {SURA_FOLDER.resolve()}")
 
           with open(SURA_JSON, 'r', encoding='utf-8') as f:
               sura_list = json.load(f)
 
           renamed = 0
-          skipped = 0
-
           for item in sura_list:
               author = str(item.get("author", "")).strip()
               bookid = str(item.get("bookid", "")).strip()
-
               if not author or not bookid:
                   continue
 
-              # পুরানো ফাইল খোঁজা
               old_path = None
-              # 1. Direct match
               direct = SURA_FOLDER / f"{author}.json"
               if direct.exists():
                   old_path = direct
               else:
-                  # 2. Case-insensitive search for all json files
                   for file in SURA_FOLDER.glob("*.json"):
                       if file.name == "sura.json":
                           continue
@@ -59,35 +48,42 @@ jobs:
                           break
 
               if not old_path:
-                  print(f"[SKIP] Not found: {author}.json")
-                  skipped += 1
                   continue
 
               new_path = SURA_FOLDER / f"{bookid}.json"
-
-              if old_path.resolve() == new_path.resolve():
+              if old_path.resolve() == new_path.resolve() or new_path.exists():
                   continue
 
-              if new_path.exists():
-                  print(f"[SKIP] Already exists: {new_path.name}")
-                  continue
-
-              # Rename - ভিতরের data same থাকবে
               os.rename(old_path, new_path)
               print(f"[RENAME] {old_path.name} -> {new_path.name}")
               renamed += 1
 
-          print(f"\nDone! Renamed: {renamed}, Not Found: {skipped}")
+          print(f"Done! Renamed: {renamed}")
           PY
 
-      - name: Commit and push
+      - name: Zip sura folder for download
         run: |
-          if [[ -z $(git status --porcelain) ]]; then
+          # sura.json সহ 1.json থেকে 114.json সব zip হবে
+          zip -r sura-bookid.zip sura/
+          echo "Zip created:"
+          ls -lh sura-bookid.zip
+          unzip -l sura-bookid.zip | head -n 20
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sura-bookid-zip
+          path: sura-bookid.zip
+          retention-days: 30
+
+      - name: Commit renamed files to repo
+        run: |
+          if [[ -z $(git status --porcelain sura/) ]]; then
             echo "No changes to commit"
             exit 0
           fi
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add sura/
-          git commit -m "chore: rename sura files from author to bookid"
+          git commit -m "chore: rename sura files author -> bookid and zip"
           git push
