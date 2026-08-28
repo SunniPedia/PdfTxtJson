@@ -1,0 +1,75 @@
+name: Fix Ya Character in booklist
+
+on:
+  push:
+    paths:
+      - 'booklist/file.json'
+  workflow_dispatch:
+
+jobs:
+  fix-ya:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fix only name, subject & author keys in booklist/file.json
+        run: |
+          python3 << 'PY'
+          import json
+          from pathlib import Path
+
+          FILE_PATH = Path('booklist/file.json')
+
+          # পুরোনো য় = য (U+09AF) + ় (U+09BC nukta) - চোখে একই দেখায় কিন্তু মোবাইল কিবোর্ডে আসে না
+          OLD_YA = '\u09af\u09bc'
+          # নতুন য় = U+09DF - এটাই Gboard/Ridmik/Avro মোবাইল কিবোর্ডে ডিফল্ট আসে
+          NEW_YA = '\u09df'
+
+          TARGET_KEYS = ['name', 'subject', 'author']
+
+          if not FILE_PATH.exists():
+              print(f"File not found: {FILE_PATH}")
+              exit(1)
+
+          with open(FILE_PATH, 'r', encoding='utf-8') as f:
+              data = json.load(f)
+
+          items = data if isinstance(data, list) else [data]
+
+          fixed_count = 0
+          for idx, item in enumerate(items):
+              for key in TARGET_KEYS:
+                  if key in item and isinstance(item[key], str):
+                      if OLD_YA in item[key]:
+                          original = item[key]
+                          item[key] = original.replace(OLD_YA, NEW_YA)
+                          fixed_count += 1
+                          print(f"[{idx}] Fixed key='{key}': {original[:50]}... -> {item[key][:50]}...")
+
+          if fixed_count > 0:
+              with open(FILE_PATH, 'w', encoding='utf-8') as f:
+                  json.dump(data, f, ensure_ascii=False, indent=2)
+              print(f"Done! Total {fixed_count} fields fixed in {FILE_PATH}")
+          else:
+              print("No old Ya found. Already clean.")
+          PY
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add booklist/file.json
+          git commit -m "fix: normalize য় in name, subject, author (U+09AF+U+09BC -> U+09DF) for mobile search"
+          git push
