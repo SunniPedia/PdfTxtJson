@@ -21,7 +21,7 @@ jobs:
           # যদি file.json একটা single object হয় -> del(.url)
           # যদি file.json একটা array of objects হয় -> map(del(.url))
           # এই command দুটো case ই handle করবে
-          jq 'if type == "array" then map(del(.url)) else del(.url) end' booklist/file.json > /tmp/file.json
+          jq 'if type == "array" then map(del(.2)) else del(.2) end' booklist/file.json > /tmp/file.json
           mv /tmp/file.json booklist/file.json
 
           echo "After:"
